@@ -12,8 +12,9 @@ $RemotePort = 2222                # Port mở trên máy System
 
 # Tự động lấy tên User hiện tại (hoặc thay bằng "Administrator" nếu cần)
 $SystemUser = $env:USERNAME
-$PubKeyUrl  = "https://raw.githubusercontent.com/mphanthj-bot/ssh-reverse-tunnel/main/id_ed25519.pub" # Nguồn public key trên GitHub (thay vì Gist)
-$GistUrl    = "https://raw.githubusercontent.com/mphanthj-bot/ssh-reverse-tunnel/main/WinReverseSSH.ps1" # URL script dùng cho auto-elevate
+$PubKeyUrl  = "https://raw.githubusercontent.com/mphanthj-bot/ssh-reverse-tunnel/master/id_ed25519.pub" # Nguồn public key trên GitHub (thay vì Gist)
+$PubKeyFallbackUrl = "https://raw.githubusercontent.com/mphanthj-bot/ssh-reverse-tunnel/master/master.pub" # Key dự phòng trong repo, dùng được cả khi chạy qua auto-elevate
+$GistUrl    = "https://raw.githubusercontent.com/mphanthj-bot/ssh-reverse-tunnel/master/WinReverseSSH.ps1" # URL script dùng cho auto-elevate
 $UseNSSM = $true             # Sử dụng NSSM tạo Service thay vì Scheduled Task (cần cài NSSM trước)
 # =======================================================================
 
@@ -53,14 +54,19 @@ Try {
         Invoke-WebRequest -Uri $PubKeyUrl -OutFile $authKeysPath -UseBasicParsing -ErrorAction Stop
         Write-Host "Đã tải public key từ GitHub repo." -ForegroundColor Cyan
     } catch {
-        # Fallback: dùng file master.pub cạnh script (nếu URL không khả dụng)
-        $masterPubPath = Join-Path $PSScriptRoot 'master.pub'
-        if (Test-Path $masterPubPath) {
-            $key = (Get-Content $masterPubPath -Raw).Trim()
-            Set-Content $authKeysPath $key
-            Write-Host "Không thể tải từ URL, dùng file master.pub cạnh script." -ForegroundColor Yellow
-        } else {
-            Write-Warning "Không tìm thấy file master.pub và URL cũng lỗi."
+        try {
+            Invoke-WebRequest -Uri $PubKeyFallbackUrl -OutFile $authKeysPath -UseBasicParsing -ErrorAction Stop
+            Write-Host "URL chính lỗi, đã tải key dự phòng (master.pub) từ GitHub repo." -ForegroundColor Yellow
+        } catch {
+            # Fallback cuối: dùng file master.pub cạnh script (nếu chạy trực tiếp từ repo)
+            $masterPubPath = Join-Path $PSScriptRoot 'master.pub'
+            if (Test-Path $masterPubPath) {
+                $key = (Get-Content $masterPubPath -Raw).Trim()
+                Set-Content $authKeysPath $key
+                Write-Host "Không tải được từ URL, dùng file master.pub cạnh script." -ForegroundColor Yellow
+            } else {
+                throw "Không thể tải public key: URL chính, URL dự phòng và file master.pub đều không khả dụng."
+            }
         }
     }
 
